@@ -10,16 +10,23 @@ import (
 	"fmt"
 	"os/exec"
 	"os"
+	"io/ioutil"
+	"time"
 )
 
 
 func main() {
 	home := os.Getenv("HOME")
 	user := "vagrant"
-	ip := "172.16.7.191"
+	ip := "172.16.7.239"
 	privkey := home + "/vagrant.pri"
 
-	cmd := exec.Command("ssh", "-tt", "-i" , privkey, user + "@" + ip)
+	//no buffering
+	exec.Command("stty", "-F", "/dev/tty", "cbreak", "min", "1").Run()
+	//no visible output
+	exec.Command("stty", "-F", "/dev/tty", "-echo").Run()
+
+	cmd := exec.Command("ssh", "-t", "-t", "-i" , privkey, user + "@" + ip)
 //	cmd := exec.Command("/bin/echo", "123")
 	stdin, err := cmd.StdinPipe()
 	stdout, err := cmd.StdoutPipe()
@@ -30,6 +37,8 @@ func main() {
 		print("ssh exec fail")
 		os.Exit(-1)
 	}
+//	fmt.Fprint(stdin, "stty -F /dev/tty -echo\n")
+	fmt.Fprint(stdin, "stty -F /dev/tty cbreak min 1\n")
 	ch := make(chan int, 3)
 	go func() {
 		b := make([]byte, 1)
@@ -39,6 +48,7 @@ func main() {
 				break
 			}
 			fmt.Print(string(b))
+			os.Stdout.Sync()
 		}
 		ch <- 1
 	}()
@@ -64,7 +74,26 @@ func main() {
 		}
 		ch <- 1
 	}()
+	go func() {
+		for{
+			break;
+			cmd := exec.Command("stty", "-F", "/dev/tty", "size")
+			stdout,_ := cmd.StdoutPipe()
+			stderr,_ := cmd.StderrPipe()
+			cmd.Start()
+
+			b,_ := ioutil.ReadAll(stdout)
+			fmt.Print(string(b))
+			b,_ = ioutil.ReadAll(stderr)
+			fmt.Print(string(b))
+
+			// 我无法将改变后的size通过命令的方式通知到远端的sshd
+			time.Sleep(time.Second*3)
+		}
+	}()
 	<-ch
+	exec.Command("stty", "-F", "/dev/tty", "echo").Run()
+
 }
 
 
